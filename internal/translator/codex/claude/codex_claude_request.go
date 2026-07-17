@@ -302,32 +302,40 @@ func ConvertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 	// Add additional configuration parameters for the Codex API.
 	template, _ = sjson.SetBytes(template, "parallel_tool_calls", parallelToolCalls)
 
-	// Convert thinking.budget_tokens to reasoning.effort.
-	reasoningEffort := "medium"
-	if thinkingConfig := rootResult.Get("thinking"); thinkingConfig.Exists() && thinkingConfig.IsObject() {
-		switch thinkingConfig.Get("type").String() {
-		case "enabled":
-			if budgetTokens := thinkingConfig.Get("budget_tokens"); budgetTokens.Exists() {
-				budget := int(budgetTokens.Int())
-				if effort, ok := thinking.ConvertBudgetToLevel(budget); ok && effort != "" {
+	// Convert the launcher-selected effort or Claude thinking fields to reasoning.effort.
+	configuredReasoningEffort := normalizeCodexReasoningEffort(rootResult.Get("_codex_config.model_reasoning_effort"))
+	reasoningEffort := configuredReasoningEffort
+	if reasoningEffort == "" {
+		reasoningEffort = "medium"
+	}
+	if configuredReasoningEffort == "" {
+		thinkingConfig := rootResult.Get("thinking")
+		if !thinkingConfig.Exists() || !thinkingConfig.IsObject() {
+			if effort := normalizeCodexReasoningEffort(rootResult.Get("output_config.effort")); effort != "" {
+				reasoningEffort = effort
+			}
+		} else {
+			switch thinkingConfig.Get("type").String() {
+			case "enabled":
+				if budgetTokens := thinkingConfig.Get("budget_tokens"); budgetTokens.Exists() {
+					budget := int(budgetTokens.Int())
+					if effort, ok := thinking.ConvertBudgetToLevel(budget); ok && effort != "" {
+						reasoningEffort = effort
+					}
+				}
+			case "adaptive", "auto":
+				// Adaptive thinking can carry an explicit effort in output_config.effort (Claude 4.6).
+				// Pass through directly; ApplyThinking handles clamping to target model's levels.
+				effort := normalizeCodexReasoningEffort(rootResult.Get("output_config.effort"))
+				if effort != "" {
+					reasoningEffort = effort
+				} else {
+					reasoningEffort = string(thinking.LevelXHigh)
+				}
+			case "disabled":
+				if effort, ok := thinking.ConvertBudgetToLevel(0); ok && effort != "" {
 					reasoningEffort = effort
 				}
-			}
-		case "adaptive", "auto":
-			// Adaptive thinking can carry an explicit effort in output_config.effort (Claude 4.6).
-			// Pass through directly; ApplyThinking handles clamping to target model's levels.
-			effort := ""
-			if v := rootResult.Get("output_config.effort"); v.Exists() && v.Type == gjson.String {
-				effort = strings.ToLower(strings.TrimSpace(v.String()))
-			}
-			if effort != "" {
-				reasoningEffort = effort
-			} else {
-				reasoningEffort = string(thinking.LevelXHigh)
-			}
-		case "disabled":
-			if effort, ok := thinking.ConvertBudgetToLevel(0); ok && effort != "" {
-				reasoningEffort = effort
 			}
 		}
 	}
@@ -360,6 +368,19 @@ func normalizeCodexReasoningSummary(result gjson.Result) string {
 
 	switch strings.ToLower(strings.TrimSpace(result.String())) {
 	case "auto", "concise", "detailed", "none":
+		return strings.ToLower(strings.TrimSpace(result.String()))
+	default:
+		return ""
+	}
+}
+
+func normalizeCodexReasoningEffort(result gjson.Result) string {
+	if !result.Exists() || result.Type != gjson.String {
+		return ""
+	}
+
+	switch strings.ToLower(strings.TrimSpace(result.String())) {
+	case "low", "medium", "high", "xhigh", "max":
 		return strings.ToLower(strings.TrimSpace(result.String()))
 	default:
 		return ""

@@ -239,6 +239,7 @@ func TestConvertClaudeRequestToCodex_CodexConfigPolicy(t *testing.T) {
 		"model": "gpt-5.6-sol",
 		"messages": [{"role": "user", "content": "Reply with OK"}],
 		"_codex_config": {
+			"model_reasoning_effort": "xhigh",
 			"model_verbosity": "low",
 			"model_reasoning_summary": "concise",
 			"personality": "pragmatic"
@@ -246,6 +247,9 @@ func TestConvertClaudeRequestToCodex_CodexConfigPolicy(t *testing.T) {
 	}`
 
 	result := ConvertClaudeRequestToCodex("gpt-5.6-sol", []byte(inputJSON), false)
+	if got := gjson.GetBytes(result, "reasoning.effort").String(); got != "xhigh" {
+		t.Fatalf("reasoning.effort = %q, want xhigh. Output: %s", got, string(result))
+	}
 	if got := gjson.GetBytes(result, "text.verbosity").String(); got != "low" {
 		t.Fatalf("text.verbosity = %q, want low. Output: %s", got, string(result))
 	}
@@ -257,6 +261,19 @@ func TestConvertClaudeRequestToCodex_CodexConfigPolicy(t *testing.T) {
 	}
 	if gjson.GetBytes(result, "_codex_config").Exists() {
 		t.Fatalf("_codex_config leaked into translated request. Output: %s", string(result))
+	}
+}
+
+func TestConvertClaudeRequestToCodex_OutputConfigEffortWithoutThinking(t *testing.T) {
+	inputJSON := `{
+		"model": "gpt-5.6-sol",
+		"messages": [{"role": "user", "content": "Reply with OK"}],
+		"output_config": {"effort": "high"}
+	}`
+
+	result := ConvertClaudeRequestToCodex("gpt-5.6-sol", []byte(inputJSON), false)
+	if got := gjson.GetBytes(result, "reasoning.effort").String(); got != "high" {
+		t.Fatalf("reasoning.effort = %q, want high. Output: %s", got, string(result))
 	}
 }
 
