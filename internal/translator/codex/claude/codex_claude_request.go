@@ -332,7 +332,17 @@ func ConvertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 		}
 	}
 	template, _ = sjson.SetBytes(template, "reasoning.effort", reasoningEffort)
-	template, _ = sjson.SetBytes(template, "reasoning.summary", "auto")
+	reasoningSummary := normalizeCodexReasoningSummary(rootResult.Get("_codex_config.model_reasoning_summary"))
+	if reasoningSummary == "" {
+		reasoningSummary = "auto"
+	}
+	template, _ = sjson.SetBytes(template, "reasoning.summary", reasoningSummary)
+	if verbosity := normalizeCodexVerbosity(rootResult.Get("_codex_config.model_verbosity")); verbosity != "" {
+		template, _ = sjson.SetBytes(template, "text.verbosity", verbosity)
+	}
+	if instructions := codexPersonalityInstructions(rootResult.Get("_codex_config.personality")); instructions != "" {
+		template, _ = sjson.SetBytes(template, "instructions", instructions)
+	}
 	if serviceTier := normalizeCodexServiceTier(rootResult.Get("service_tier")); serviceTier != "" {
 		template, _ = sjson.SetBytes(template, "service_tier", serviceTier)
 	}
@@ -341,6 +351,47 @@ func ConvertClaudeRequestToCodex(modelName string, inputRawJSON []byte, _ bool) 
 	template, _ = sjson.SetBytes(template, "include", []string{"reasoning.encrypted_content"})
 
 	return template
+}
+
+func normalizeCodexReasoningSummary(result gjson.Result) string {
+	if !result.Exists() || result.Type != gjson.String {
+		return ""
+	}
+
+	switch strings.ToLower(strings.TrimSpace(result.String())) {
+	case "auto", "concise", "detailed", "none":
+		return strings.ToLower(strings.TrimSpace(result.String()))
+	default:
+		return ""
+	}
+}
+
+func normalizeCodexVerbosity(result gjson.Result) string {
+	if !result.Exists() || result.Type != gjson.String {
+		return ""
+	}
+
+	switch strings.ToLower(strings.TrimSpace(result.String())) {
+	case "low", "medium", "high":
+		return strings.ToLower(strings.TrimSpace(result.String()))
+	default:
+		return ""
+	}
+}
+
+func codexPersonalityInstructions(result gjson.Result) string {
+	if !result.Exists() || result.Type != gjson.String {
+		return ""
+	}
+
+	switch strings.ToLower(strings.TrimSpace(result.String())) {
+	case "friendly":
+		return "Use a friendly communication style: be warm and collaborative while remaining clear, efficient, and technically precise."
+	case "pragmatic":
+		return "Use a pragmatic communication style: lead with outcomes, be direct and concise, prefer plain language, and include technical detail only when it helps the task."
+	default:
+		return ""
+	}
 }
 
 func normalizeCodexServiceTier(result gjson.Result) string {

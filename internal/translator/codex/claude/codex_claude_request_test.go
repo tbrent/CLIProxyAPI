@@ -234,6 +234,55 @@ func TestConvertClaudeRequestToCodex_ServiceTier(t *testing.T) {
 	}
 }
 
+func TestConvertClaudeRequestToCodex_CodexConfigPolicy(t *testing.T) {
+	inputJSON := `{
+		"model": "gpt-5.6-sol",
+		"messages": [{"role": "user", "content": "Reply with OK"}],
+		"_codex_config": {
+			"model_verbosity": "low",
+			"model_reasoning_summary": "concise",
+			"personality": "pragmatic"
+		}
+	}`
+
+	result := ConvertClaudeRequestToCodex("gpt-5.6-sol", []byte(inputJSON), false)
+	if got := gjson.GetBytes(result, "text.verbosity").String(); got != "low" {
+		t.Fatalf("text.verbosity = %q, want low. Output: %s", got, string(result))
+	}
+	if got := gjson.GetBytes(result, "reasoning.summary").String(); got != "concise" {
+		t.Fatalf("reasoning.summary = %q, want concise. Output: %s", got, string(result))
+	}
+	if got := gjson.GetBytes(result, "instructions").String(); !strings.Contains(got, "pragmatic communication style") {
+		t.Fatalf("instructions = %q, want pragmatic instructions. Output: %s", got, string(result))
+	}
+	if gjson.GetBytes(result, "_codex_config").Exists() {
+		t.Fatalf("_codex_config leaked into translated request. Output: %s", string(result))
+	}
+}
+
+func TestConvertClaudeRequestToCodex_InvalidCodexConfigPolicy(t *testing.T) {
+	inputJSON := `{
+		"model": "gpt-5.6-sol",
+		"messages": [{"role": "user", "content": "Reply with OK"}],
+		"_codex_config": {
+			"model_verbosity": "verbose",
+			"model_reasoning_summary": "short",
+			"personality": "dramatic"
+		}
+	}`
+
+	result := ConvertClaudeRequestToCodex("gpt-5.6-sol", []byte(inputJSON), false)
+	if gjson.GetBytes(result, "text.verbosity").Exists() {
+		t.Fatalf("invalid text.verbosity should be omitted. Output: %s", string(result))
+	}
+	if got := gjson.GetBytes(result, "reasoning.summary").String(); got != "auto" {
+		t.Fatalf("reasoning.summary = %q, want auto. Output: %s", got, string(result))
+	}
+	if got := gjson.GetBytes(result, "instructions").String(); got != "" {
+		t.Fatalf("instructions = %q, want empty. Output: %s", got, string(result))
+	}
+}
+
 func TestConvertClaudeRequestToCodex_ShortenLongToolUseIDs(t *testing.T) {
 	longID := "toolu_" + strings.Repeat("a", 62)
 	if len(longID) <= 64 {
